@@ -64,3 +64,6 @@ TODO
 
 ## SSO
 TODO
+
+## References
+* [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
