@@ -257,8 +257,75 @@ https://argo-workflow-ip:port/api/v1/events/default/
 
 ```shell
 cat <<EOF | kubectl apply -n default -f -
+apiVersion: v1
+data:
+  token: eW91ci10b2tlbg==
+kind: Secret
+metadata:
+  name: git-secret
+type: Opaque
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: hook
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: pr
+        value: 1
+      - name: argoServer
+        value: https://localhost:8080
+
+  hooks:
+    exit:                   # 只有 exit 这个 hook 名称是固定的
+      template: hook
+    all:                    # 这里可以是任意字符串，重点在于 expression 这里的表达式
+      template: hook
+      expression: "true"    # 可以通过表达式 expression 对事件进行过滤
+
+  templates:
+  - container:
+      args:
+      - search
+      - kubectl
+      command:
+      - hd
+      image: ghcr.io/linuxsuren/hd:v0.0.70 # 任务镜像
+      name: main
+    name: hd
+  - name: hook
+    volumes:
+      - name: git-secret
+        secret:
+          defaultMode: 0400
+          secretName: git-secret    # 包含 token 字段的 Secret
+    container:
+      image: ghcr.io/linuxsuren/gogit:master@sha256:4855f4ffbc1644eb7246f94cc9ee12c793ed4c26ba18e1d4d9afa57b72f1e846
+      args:
+        - --provider=github         # 支持 GitHub、Gitlab 等，私有部署的话需要参数 --server 指定地址
+        - --owner=LinuxSuRen        # 根据需要修改 owner、repo、username
+        - --repo=gogit
+        - --username=LinuxSuRen
+        - --token=file:///root/.ssh/token
+        - --pr={{workflow.parameters.pr}}
+        - --target={{workflow.parameters.argoServer}}/workflows/{{workflow.namespace}}/{{workflow.name}}
+        - --status={{workflow.status}}
+      volumeMounts:
+        - mountPath: /root/.ssh/
+          name: git-secret
 EOF
 ```
+
+触发上面的工作流后，就会在指定的仓库 Pull Request 上出现构建状态。
+
+### 小结
+
+从这个示例中，我们可以看到：
+
+* hook 机制依然是非常的灵活，但 expression 表达式可能会是一个具有挑战的部分
+* hook 机制有点像是 Golang 的 `__init` 函数，作为特殊的入口，可以调用其他的模板
 
 ## 日志持久化
 Argo Workflows 默认不会持久化工作流日志，而是从每个任务对应的 Pod 中获取日志。而对于 Kubernetes 来说，Pod 是一个没有保障的最小执行单元，可能会由于人为或者某种策略被删除。当 Pod 被删除后，日志就无法查看了。因此，对于生产环境而言，必须要持久化日志。
