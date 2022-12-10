@@ -320,6 +320,10 @@ EOF
 
 触发上面的工作流后，就会在指定的仓库 Pull Request 上出现构建状态。
 
+### 参考链接
+
+* [官方文档](https://argoproj.github.io/argo-workflows/lifecyclehook/)
+
 ### 小结
 
 从这个示例中，我们可以看到：
@@ -332,7 +336,21 @@ Argo Workflows 默认不会持久化工作流日志，而是从每个任务对�
 
 Argo Workflows 执行多种存储协议，以下是兼容 S3 的 MinIO 存储：
 
+首先，下载、安装以及配置 minio。本文仅作学习、演示使用，生产环境中，请按照官方文档进行安装、配置。
+
 ```shell
+hd i minio
+minio server /tmp/minio --console-address ":9001"
+```
+
+然后，访问 minio 管理界面 `http://localhost:9001`，创建名为 `argo-workflow` 的 `bucket`。创建 `Access Key`，并写入下面的 `Secret` 中。
+
+安装如下配置修改 `ConfigMap`：
+
+```shell
+kubectl create secret generic minio-workflow \
+  --from-literal=accessKey=supersecret \
+  --from-literal=secretKey=topsecret
 cat <<EOF | kubectl apply -n default -f -
 apiVersion: v1
 kind: ConfigMap
@@ -360,6 +378,7 @@ EOF
 我们可以通过 minio 的命令行客户端 `mc` 看到类似如下的文件：
 
 ```shell
+mc alias set myminio http://localhost:9001 minioadmin minioadmin
 # mc ls myminio/argo-workflow -r
 [2022-12-09 10:53:31 CST]    20B STANDARD hello-world-5mjgp/hello-world-5mjgp-clone-3848310779/main.log
 [2022-12-09 10:55:39 CST]  16KiB STANDARD hello-world-5mjgp/hello-world-5mjgp-image-2614052838/main.log
@@ -367,7 +386,26 @@ EOF
 [2022-12-09 10:53:51 CST]   435B STANDARD hello-world-5mjgp/hello-world-5mjgp-test-1532501286/main.log
 ```
 
+### 参考链接
+
+* [支持的外部存储类型](https://argoproj.github.io/argo-workflows/configure-artifact-repository/)
+* [官方文档](https://argoproj.github.io/argo-workflows/configure-archive-logs/)
+
+### 小结
+
+通过上面的例子，我们可以看到：
+
+* Argo Workflows 能以非侵入式的配置，使得工作流日志输出到对象存储等外部存储中
+* Argo Workflows 的任务有输入、输出（input、output）的概念，日志的持久化是将日志作为输出写入到预先配置好的外部存储
+* 日志的持久化，可以分别在全局 ConfigMap、Workflow Spec、WorkflowTemplate 中配置
+
+## 工作流默认配置
+TODO
+
 ## SSO
+TODO
+
+## 插件机制
 TODO
 
 ## References
