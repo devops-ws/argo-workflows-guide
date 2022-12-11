@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: hook
+spec:
+  templates:
+  - name: hook
+    inputs:
+      parameters:
+        - name: pr
+        - name: argoServer
+    volumes:
+      - name: git-secret
+        secret:
+          defaultMode: 0400
+          secretName: git-secret    # 包含 token 字段的 Secret
+    container:
+      image: ghcr.io/linuxsuren/gogit:master@sha256:4855f4ffbc1644eb7246f94cc9ee12c793ed4c26ba18e1d4d9afa57b72f1e846
+      command:
+      - gogit
+      args:
+        - --provider=github         # 支持 GitHub、Gitlab 等，私有部署的话需要参数 --server 指定地址
+        - --owner=LinuxSuRen        # 根据需要修改 owner、repo、username
+        - --repo=gogit
+        - --username=LinuxSuRen
+        - --token=file:///root/.ssh/token
+        - --pr={{inputs.parameters.pr}}
+        - --target={{inputs.parameters.argoServer}}/workflows/{{workflow.namespace}}/{{workflow.name}}
+        - --status={{workflow.status}}
+      volumeMounts:
+        - mountPath: /root/.ssh/
+          name: git-secret

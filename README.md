@@ -399,8 +399,40 @@ mc alias set myminio http://localhost:9001 minioadmin minioadmin
 * Argo Workflows 的任务有输入、输出（input、output）的概念，日志的持久化是将日志作为输出写入到预先配置好的外部存储
 * 日志的持久化，可以分别在全局 ConfigMap、Workflow Spec、WorkflowTemplate 中配置
 
-## 工作流默认配置
-TODO
+## 引用已有模板中的任务
+
+Argo Workflows 允许以三种方式引用已有的任务：
+
+* 当前工作流
+* 当前命名空间中的工作流模板
+* 全局（Cluster 级别）的工作流模板
+
+这相当于 Java、Golang 等编程语言中的引用方式，分别可以引用：当前源文件、当前包、其他包下的函数。
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: hello-world
+spec:
+  templates:
+  - name: hd
+    dag:
+      tasks:
+      - name: hd
+        templateRef:            # 表示引用其他模板中的任务
+          name: hook            # 模板名称
+          template: hook        # 模板中的任务名称
+          clusterScope: true    # 为 true 是从全局（Cluster）中查找模板，为 false 时从当前命名空间中查找
+        arguments:
+          parameters:           # 给所引用的任务传递参数
+          - name: pr
+            value: 1
+```
+
+### 小结
+
+我们可以将公用的模板作为模板库，供工作流调用，这样就可以使得工作流变得简单。
 
 ## SSO
 TODO
