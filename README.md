@@ -442,4 +442,4 @@ TODO
 
 ## References
 * [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
-* [Argo CD Guide)(https://github.com/LinuxSuRen/argo-cd-guide)
+* [Argo CD Guide](https://github.com/LinuxSuRen/argo-cd-guide)
