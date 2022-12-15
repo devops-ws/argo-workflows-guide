@@ -212,6 +212,58 @@ Argo Workflows 利用 `WorkflowEventBinding` 将收到的 webhook 请求与 Work
 
 ```shell
 cat <<EOF kubectl apply -n default -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: submit-workflow-template
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workfloweventbindings
+    verbs:
+      - list
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflowtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflows
+    verbs:
+      - create
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github.com
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github.com
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: submit-workflow-template
+subjects:
+  - kind: ServiceAccount
+    name: github.com
+    namespace: argo
+---
+apiVersion: v1
+stringData:
+  github.com: |
+    type: github
+    secret: "my-uuid"
+kind: Secret
+metadata:
+  name: argo-workflows-webhook-clients
+type: Opaque
+---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowEventBinding
 metadata:
