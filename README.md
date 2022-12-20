@@ -486,6 +486,17 @@ spec:
 
 我们可以将公用的模板作为模板库，供工作流调用，这样就可以使得工作流变得简单。
 
+## 任务模板类型
+
+|||
+|---|---|
+| 容器 | 指定单个容器 |
+| 脚本 ||
+| [容器集合](https://argoproj.github.io/argo-workflows/container-set-template/) | 支持多个容器 |
+| [Directed-Acyclic Graph (DAG)](https://argoproj.github.io/argo-workflows/walk-through/dag/) | 支持指定任务之间的依赖关系，默认会尽可能地并发执行。 |
+| [HTTP](https://argoproj.github.io/argo-workflows/http-template/) | 支持发送 HTTP 请求 |
+| 资源 | 直接操作 Kubernetes 资源 |
+
 ## SSO
 TODO
 

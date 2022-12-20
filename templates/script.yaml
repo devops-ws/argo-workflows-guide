@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: script
+spec:
+  entrypoint: main
+  templates:
+  - name: main
+    steps:
+    - - name: shell
+        template: shell
+      - name: python
+        template: python
+  - name: shell
+    script:
+      image: alpine
+      command: [sh]
+      source: echo 1
+  - name: python
+    script:
+      image: python:alpine3.6
+      command: [python]
+      source: |
+        import random
+        i = random.randint(1, 100)
+        print(i)
