@@ -501,7 +501,116 @@ spec:
 TODO
 
 ## 插件机制
-TODO
+Argo Workflows 内置了[几种类型的任务模板](#任务模板类型)，这些任务类型或是方便解决特定问题，或是可以解决通用问题。此外，我们还可以通过[执行器（Executor）插件](https://argoproj.github.io/argo-workflows/plugins/)扩展 Argo Workflows 的功能。
+
+执行器插件，会作为工作流 Pod 中 sidecar 的形式存在，通过 HTTP 提供服务。Argo Workflows 规定了 URI，以及 Request 和 Response。据此，我们可以看出来插件的几个特点：
+
+* 插件可以用任何编程语言实现
+* 执行插件任务时无需启动新的 Pod，减少了对 Pod 的消耗
+
+该插件功能默认是未启用的，我们可以在控制器（Controller）中添加环境变量的方式启用插件功能。请参考如下配置：
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: workflow-controller
+          env:
+            - name: ARGO_EXECUTOR_PLUGINS
+              value: "true"
+```
+
+安装插件时，只需要添加一个 ConfigMap 即可。例如：
+
+```yaml
+apiVersion: v1
+data:
+  sidecar.automountServiceAccountToken: "false"
+  sidecar.container: |
+    args:
+    - --provider
+    - gitlab
+    image: ghcr.io/linuxsuren/workflow-executor-gogit:master
+    command:
+    - workflow-executor-gogit
+    name: gogit-executor-plugin
+    ports:
+    - containerPort: 3001
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 250m
+        memory: 64Mi
+    securityContext:
+      allowPrivilegeEscalation: true
+      runAsNonRoot: true
+      runAsUser: 65534
+kind: ConfigMap
+metadata:
+  labels:
+    workflows.argoproj.io/configmap-type: ExecutorPlugin
+  name: gogit-executor-plugin
+  namespace: argo
+```
+
+我们可以把上面的 ConfigMap 添加到 Argo Workflows 控制器所在的命名空间中，也可以添加到执行工作流所在的命名空间中。另外，当存在多个同名的插件时，会以工作流所在命名空间的插件为主。
+
+插件安装成功的话，你可以在控制器中查看到类似如下的日志输出：
+
+```
+level=info msg="Executor plugin added" name=gogit-executor-plugin
+```
+
+插件的使用方法如下：
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: plugin
+  namespace: default
+spec:
+  entrypoint: main
+  hooks:
+    exit:
+      template: status
+    all:
+      template: status
+      expression: "true"
+  templates:
+  - container:
+      args:
+        - search
+        - kubectl
+      command:
+        - hd
+      image: ghcr.io/linuxsuren/hd:v0.0.70
+    name: main
+  - name: status
+    plugin:
+      gogit-executor-plugin:                    # 下面支持任何格式给插件传递参数
+        label: test
+        owner: linuxsuren
+        repo: test
+        pr: "3"
+        status: success
+```
+
+这里有[更多社区维护的插件](https://argoproj.github.io/argo-workflows/plugin-directory/)，有通过 Python、Golang、Rust 等语言实现的。
+
+如果你想了解如何开发一个插件，可以继续往后阅读。下面介绍插件机制对 HTTP 的请求、响应的规定：
+
+* Request payload 中可以解析到与当前工作流的信息，包括：名称、命名空间、插件参数
+  * 我们可以参考 [ExecuteTemplateArgs](https://github.com/argoproj/argo-workflows/blob/774bf47ee678ef31d27669f7d309dee1dd84340c/pkg/plugins/executor/template_executor_plugin.go#L19) 来解析请求
+* Response 需要告知任务执行的状态
+  * 我们可以参考 [ExecuteTemplateReply](https://github.com/argoproj/argo-workflows/blob/774bf47ee678ef31d27669f7d309dee1dd84340c/pkg/plugins/executor/template_executor_plugin.go#L32) 作为 HTTP 响应的数据
 
 ## References
 * [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
