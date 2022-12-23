@@ -596,11 +596,9 @@ spec:
   - name: status
     plugin:
       gogit-executor-plugin:                    # 下面支持任何格式给插件传递参数
-        label: test
         owner: linuxsuren
         repo: test
         pr: "3"
-        status: success
 ```
 
 这里有[更多社区维护的插件](https://argoproj.github.io/argo-workflows/plugin-directory/)，有通过 Python、Golang、Rust 等语言实现的。
