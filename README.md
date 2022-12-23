@@ -610,6 +610,159 @@ spec:
 * Response 需要告知任务执行的状态
   * 我们可以参考 [ExecuteTemplateReply](https://github.com/argoproj/argo-workflows/blob/774bf47ee678ef31d27669f7d309dee1dd84340c/pkg/plugins/executor/template_executor_plugin.go#L32) 作为 HTTP 响应的数据
 
+## Golang SDK
+Argo Workflows 官方[维护了 Golang、Java、Python 语言](https://argoproj.github.io/argo-workflows/client-libraries/)的 SDK。下面以 Golang 为例，讲解 SDK 的使用方法。
+
+在运行下面的示例前，有两点需要注意的：
+
+* Argo Workflows Server 地址
+* Token
+
+你可以选择直接使用 `argo-server` 的 Service 地址，将端口 `2746` 转发到本地，或将 Service 修改为 `NodePort`，或者其他方法暴露端口。也可以执行下面的命令，再启动一个 Argo 服务：
+
+```shell
+argo server
+```
+
+第二个，就是用户认证的问题了。如果你对 Kubernetes 认证系统非常熟悉的话，可以跳过这一段，直接找一个 Token。为了让你对 Argo 的用户认证更加了解，我们为下面的测试代码创建一个新的 ServiceAccount。
+
+我们需要分别创建：
+
+* Role，规定可以对哪些资源有哪些操作权限
+
+```shell
+kubectl create role demo --verb=get,list,update,create --resource=workflows.argoproj.io --resource=workflowtemplates.argoproj.io -n default
+```
+
+* ServiceAccount，代表一个用户
+
+```shell
+kubectl create serviceaccount demo -n default
+```
+
+* RoleBinding，将用户和角色（Role）进行绑定
+
+```shell
+kubectl create rolebinding demo --role=demo --serviceaccount=default:demo -n default
+```
+
+* Secret，关联一个 ServiceAccount，并自动生成 Token
+
+```shell
+kubectl apply -n default -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo.service-account-token
+  annotations:
+    kubernetes.io/service-account.name: demo
+type: kubernetes.io/service-account-token
+EOF
+```
+
+> 上面的例子中，我们使用的是 `Role` 和 `RoleBinding` ，这样的角色只能允许访问所在命名空间（namespace）的资源。上面创建的用户，只能够访问 `default` 这命名空间下的 `Workflow` 和 `WorkflowTemplate` 。
+> 如果想要创建一个全局的角色以及绑定，可以使用 `ClusterRole` 和 `ClusterRoleBinding` 。
+
+上面的用户创建完成后，我们就可以通过下面的命令拿到指定权限的 `Token` 了：
+
+```shell
+kubectl get secret -n default demo.service-account-token -ojsonpath={.data.token}|base64 -d
+```
+
+接下来，创建一个 Golang 工程，并将下面的示例代码拷贝到源文件 `main.go` 中。
+
+```shell
+mkdir demo
+cd demo
+go mod init github.com/linuxsuren/demo
+go get github.com/argoproj/argo-workflows/v3@v3.4.4
+go mod tidy
+```
+
+示例代码：
+
+```golang
+package main
+
+import (
+	"fmt"
+	"github.com/argoproj/argo-workflows/v3/pkg/apiclient"
+	"github.com/argoproj/argo-workflows/v3/pkg/apiclient/workflow"
+	"github.com/argoproj/argo-workflows/v3/pkg/apiclient/workflowtemplate"
+	"github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+/**
+** Before run this demo, please create a parameterless WorkflowTemplate in namespace default.
+** In this demo, we will print all the WorkflowTemplates in namespace default.
+** Then run a Workflow base on the first WorkflowTemplate.
+ */
+
+func main() {
+	opt := apiclient.Opts{
+		ArgoServerOpts: apiclient.ArgoServerOpts{
+			URL:                "localhost:31808", // argo-server address
+			Path:               "/",
+			Secure:             true,
+			InsecureSkipVerify: true,
+		},
+		AuthSupplier: func() string {
+			return "Bearer your-token"
+		},
+	}
+	ctx, client, err := apiclient.NewClientFromOpts(opt) // the context will carry on auth
+	if err != nil {
+		panic(err)
+	}
+
+	wftClient, err := client.NewWorkflowTemplateServiceClient()
+	if err != nil {
+		fmt.Println("failed to get the WorkflowTemplates client", err)
+		return
+	}
+	defaultNamespace := "default"
+
+	fmt.Println("get the WorkflowTemplate list from", defaultNamespace)
+	wftList, err := wftClient.ListWorkflowTemplates(ctx, &workflowtemplate.WorkflowTemplateListRequest{
+		Namespace: defaultNamespace,
+	})
+	if err != nil {
+		fmt.Println("failed to list WorkflowTemplates", err)
+		return
+	}
+	for _, wft := range wftList.Items {
+		fmt.Println(wft.Namespace, wft.Name)
+	}
+
+	if wftList.Items.Len() > 0 {
+		wft := wftList.Items[0]
+
+		wfClient := client.NewWorkflowServiceClient()
+		_, err := wfClient.CreateWorkflow(ctx, &workflow.WorkflowCreateRequest{
+			Namespace: defaultNamespace,
+			Workflow: &v1alpha1.Workflow{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: wft.Name,
+				},
+				Spec: v1alpha1.WorkflowSpec{
+					WorkflowTemplateRef: &v1alpha1.WorkflowTemplateRef{
+						Name: wft.Name,
+					},
+				},
+			},
+		})
+		if err != nil {
+			fmt.Println("failed to create workflow", err)
+		}
+	}
+}
+```
+
+最后，执行命令：`go run .`
+
+> 把上面的示例代码编译后，二进制文件大致在 60M+
+
 ## References
 * [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
 * [Argo CD Guide](https://github.com/LinuxSuRen/argo-cd-guide)
