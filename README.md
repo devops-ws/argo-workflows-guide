@@ -610,6 +610,56 @@ spec:
 * Response 需要告知任务执行的状态
   * 我们可以参考 [ExecuteTemplateReply](https://github.com/argoproj/argo-workflows/blob/774bf47ee678ef31d27669f7d309dee1dd84340c/pkg/plugins/executor/template_executor_plugin.go#L32) 作为 HTTP 响应的数据
 
+## 归档
+
+安装 PostGreSQL
+```shell
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+cat > values.yaml <<EOF
+auth:
+  enablePostgresUser: true
+  postgresPassword: "StrongPassword"
+  username: "root"
+  password: "root"
+  database: "app_db"
+EOF
+helm install postgresql-dev -f values.yaml bitnami/postgresql
+```
+
+```shell
+kubectl create secret generic --from-literal=username=root --from-literal=password=root argo-postgres-config -n argo
+```
+
+启用工作流归档功能：
+```yaml
+apiVersion: v1
+data:
+  persistence: |
+    archive: true
+    nodeStatusOffLoad: true
+    postgresql:
+      host: postgresql-dev.argocd.svc
+      port: 5432
+      database: app_db
+      tableName: argo_workflows
+      userNameSecret:
+        name: argo-postgres-config
+        key: username
+      passwordSecret:
+        name: argo-postgres-config
+        key: password
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+```
+
+通过命令行客户端连接数据库：
+```shell
+kubectl run postgresql-dev-client --rm --tty -i --restart='Never' --namespace default --image docker.io/bitnami/postgresql:14.1.0-debian-10-r80 --env="PGPASSWORD=$POSTGRES_PASSWORD" --command -- psql --host postgresql-dev.argocd.svc -U root -d app_db -p 5432
+```
+
 ## Golang SDK
 Argo Workflows 官方[维护了 Golang、Java、Python 语言](https://argoproj.github.io/argo-workflows/client-libraries/)的 SDK。下面以 Golang 为例，讲解 SDK 的使用方法。
 
