@@ -611,8 +611,12 @@ spec:
   * 我们可以参考 [ExecuteTemplateReply](https://github.com/argoproj/argo-workflows/blob/774bf47ee678ef31d27669f7d309dee1dd84340c/pkg/plugins/executor/template_executor_plugin.go#L32) 作为 HTTP 响应的数据
 
 ## 归档
+Argo Workflow 支持将工作流执行记录（Workflow）的信息存储到 PostgreSQL 或 MySQL 中，以达到更长久地保存执行记录但又不会影响到
+Kubernetes 集群的性能。
 
-安装 PostGreSQL
+这里，给出一个归档（ [Archive](https://argoproj.github.io/argo-workflows/workflow-archive/) ）数据到 PostgreSQL 的配置方法：
+
+首先，安装 [PostgreSQL](https://www.postgresql.org/) 。这里采用 Helm Chart 的方式来安装：
 ```shell
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
@@ -627,17 +631,17 @@ EOF
 helm install postgresql-dev -f values.yaml bitnami/postgresql
 ```
 
+Argo Workflows 会以 Secret 的方式读取数据库的用户名、密码，下面是创建 Secret 的命令：
 ```shell
 kubectl create secret generic --from-literal=username=root --from-literal=password=root argo-postgres-config -n argo
 ```
 
-启用工作流归档功能：
+然后，参考下面的 ConfigMap 启用工作流的归档功能：
 ```yaml
 apiVersion: v1
 data:
   persistence: |
     archive: true
-    nodeStatusOffLoad: true
     postgresql:
       host: postgresql-dev.argocd.svc
       port: 5432
@@ -655,10 +659,56 @@ metadata:
   namespace: argo
 ```
 
-通过命令行客户端连接数据库：
+上面的配置步骤都完成，执行工作流后，我们可以在 UI 界面左侧菜单上看到归档的执行记录。也可以通过数据库命令行客户端连接数据库，查看数据的表记录信息：
 ```shell
+export POSTGRES_PASSWORD=root
 kubectl run postgresql-dev-client --rm --tty -i --restart='Never' --namespace default --image docker.io/bitnami/postgresql:14.1.0-debian-10-r80 --env="PGPASSWORD=$POSTGRES_PASSWORD" --command -- psql --host postgresql-dev.argocd.svc -U root -d app_db -p 5432
 ```
+
+下面是一些 PostgreSQL 命令行客户端的参考：
+```shell
+\dt                                                   # 查看当前数据库中的表
+select name,phase from argo_archived_workflows;       # 查看已归档的工作流执行记录
+```
+你会看到类似如下的输出：
+```sql
+app_db=> \dt
+                    List of relations
+ Schema |              Name              | Type  | Owner
+--------+--------------------------------+-------+-------
+ public | argo_archived_workflows        | table | root
+ public | argo_archived_workflows_labels | table | root
+ public | argo_workflows                 | table | root
+ public | schema_history                 | table | root
+(4 rows)
+
+app_db=> select name,phase from argo_archived_workflows;
+     name     |   phase
+--------------+-----------
+ plugin-pl6rx | Succeeded
+ plugin-8gs7c | Succeeded
+```
+
+## GC
+Argo Workflows 有个工作流执行记录（Workflow）的清理机制，也就是 Garbage Collect(GC)。GC 机制可以避免有太多的执行记录，
+防止 Kubernetes 的后端存储 Etcd 过载。
+
+我们可以在 ConfigMap 中配置期望保留的工作执行记录数量，这里支持为不同状态的执行记录设定不同的保留数量。配置方法如下：
+
+```yaml
+apiVersion: v1
+data:
+  retentionPolicy: |
+    completed: 3
+    failed: 3
+    errored: 3
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+```
+
+需要注意的是，这里的清理机制会将多余的 Workflow 资源从 Kubernetes 中删除。如果希望能更多历史记录的话，建议启用并配置好归档功能。
 
 ## Golang SDK
 Argo Workflows 官方[维护了 Golang、Java、Python 语言](https://argoproj.github.io/argo-workflows/client-libraries/)的 SDK。下面以 Golang 为例，讲解 SDK 的使用方法。
