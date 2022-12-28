@@ -38,7 +38,7 @@ kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/lat
 如果你的环境访问 GitHub 时有网络问题，可以使用下面的命令来安装：
 
 ```shell
-docker run -it --rm -v /root/.kube/:/root/.kube --network host ghcr.io/linuxsuren/argo-workflows-guide:master
+docker run -it --rm -v $HOME/.kube/:/root/.kube --network host ghcr.io/linuxsuren/argo-workflows-guide:master
 ```
 
 推荐使用的工具：
@@ -873,3 +873,4 @@ func main() {
 ## References
 * [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
 * [Argo CD Guide](https://github.com/LinuxSuRen/argo-cd-guide)
+* [Argo Rollouts Guide](https://github.com/LinuxSuRen/argo-rollouts-guide)
