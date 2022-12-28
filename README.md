@@ -256,8 +256,8 @@ subjects:
 ---
 apiVersion: v1
 stringData:
-  github.com: |
-    type: github
+  github.com: |			# 这里对应 ServiceAcccount 名称
+    type: github		# 固定的几个类型
     secret: "my-uuid"
 kind: Secret
 metadata:
@@ -289,6 +289,13 @@ EOF
 ```
 https://argo-workflow-ip:port/api/v1/events/default/
 ```
+
+上面的 Secret 名称 `argo-workflows-webhook-clients` 是固定的，所在命名空间也就是 webhook 地址中的 `default`。支持的 Git Provider 名称也是固定的几个：
+
+* `bitbucket`
+* `bitbucketserver`
+* `github`
+* `gitlab`
 
 ### 小结
 
