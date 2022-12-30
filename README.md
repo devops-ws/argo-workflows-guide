@@ -224,7 +224,7 @@ EOF
 # 执行下面的命令登录 Harbor
 # docker login 10.121.218.184:30002 -uyour-username -pyour-password
 kubectl create secret generic harbor --from-file=config.json=/root/.docker/config.json -n default
-cat <<EOF kubectl apply -n default -f -
+cat <<EOF | kubectl apply -n default -f -
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -352,6 +352,56 @@ EOF
 * `registry.insecure=true` 这个参数对于私有化环境中没有证书的情况非常重要
 * buildkit 还支持缓存持久化，从而加快构建速度，有兴趣的朋友可以翻阅官方文档，或帮助完善这里的例子
 * Go 缓存代理是可选的，但推荐在内网中部署以加快依赖下载速度
+
+## 结果输出与引用
+Argo Workflows 支持制品（artifact）与变量的输出，下面是变量输出以及引用的例子：
+
+```shell
+cat <<EOF | kubectl apply -n default -f -
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: output
+spec:
+  entrypoint: main
+
+  templates:
+  - name: main
+    dag:
+      tasks:
+        - name: version
+          template: version
+        - name: print
+          template: print
+          depends: version
+          arguments:
+            parameters:
+              - name: version
+                value: "{{tasks.version.outputs.parameters.version}}"       # 引用输出变量
+  - name: version
+    container:
+      image: alpine/git:v2.26.2
+      command:
+      - sh
+      - -c
+      - 'echo v1.1 > /tmp/version'         # 将期望输出的内容写入文件
+    outputs:
+      parameters:
+      - name: version
+        valueFrom:
+          path: /tmp/version               # 读取容器中的文件，并作为内容输出到变量 version 中
+  - name: print
+    inputs:
+      parameters:
+        - name: version                    # 定义输入变量
+    container:
+      image: alpine
+      command:
+      - sh
+      - -c
+      - 'echo {{inputs.parameters.version}}'
+EOF
+```
 
 ## Webhook
 所有主流 Git 仓库都是支持 webhook 的，借助 webhook 可以当代码发生变化后实时地触发工作流的执行。
