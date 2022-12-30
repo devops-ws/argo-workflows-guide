@@ -175,7 +175,7 @@ spec:
         - --depth
         - "1"
         - --branch
-        - "{{inputs.parameters.branch}}"
+        - "{{=sprig.trimPrefix('refs/heads/', inputs.parameters['branch'])}}"       # 利用模板函数处理分支名称
         - --single-branch
         - "{{inputs.parameters.repo}}"
         - .
@@ -204,6 +204,7 @@ EOF
 * 工作流中可以申明多个任务模板，只有被 `entrypoint` 引用到的模板才会被执行
 * 每执行一个任务都会对应启动一个 Pod
 * 一个工作流之间的多个任务需要共享目录的话，需要挂载 Volume
+* 对于参数格式的处理，我们可以利用模板函数来实现
 
 ## 构建镜像
 这里，我以构建并推送镜像到私有镜像仓库（例如： [Harbor](https://github.com/devops-ws/harbor-guide) ）中为例，分享 Argo Workflows 的使用。
