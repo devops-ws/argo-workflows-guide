@@ -205,6 +205,154 @@ EOF
 * 每执行一个任务都会对应启动一个 Pod
 * 一个工作流之间的多个任务需要共享目录的话，需要挂载 Volume
 
+## 构建镜像
+这里，我以构建并推送镜像到私有镜像仓库（例如： [Harbor](https://github.com/devops-ws/harbor-guide) ）中为例，分享 Argo Workflows 的使用。
+
+下面是这个例子中用到的相关工具：
+
+* 构建工具 [buildkit](https://github.com/moby/buildkit)
+* 私有 Git 仓库
+* 私有镜像仓库
+
+准备工作：
+
+* 在集群中的每个节点上[配置 Docker 支持 HTTP 镜像地址](https://github.com/devops-ws/harbor-guide#docker-daemon)
+* 创建 Git 凭据
+* 创建 Docker 凭据（下面已包含）
+
+```shell
+# 执行下面的命令登录 Harbor
+# docker login 10.121.218.184:30002 -uyour-username -pyour-password
+kubectl create secret generic harbor --from-file=config.json=/root/.docker/config.json -n default
+cat <<EOF kubectl apply -n default -f -
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: image-build
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: repo
+        value: git@10.121.218.82:demo/hello-world.git
+      - name: branch
+        value: master
+
+  volumeClaimTemplates:                           # 用于在多个 Pod 之间共享代码
+    - metadata:
+        name: work
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 64Mi
+
+  templates:
+  - name: main
+    dag:
+      tasks:
+        - name: clone
+          template: clone
+          arguments:
+            parameters:
+              - name: repo
+                value: "{{workflow.parameters.repo}}"
+              - name: branch
+                value: "{{workflow.parameters.branch}}"
+        - name: image
+          template: image
+          depends: clone
+          arguments:
+            parameters:
+              - name: image
+                value: demo/hello-world
+              - name: dockerfile
+                value: .
+
+  - name: clone
+    inputs:
+      parameters:
+        - name: repo
+        - name: branch
+    volumes:
+      - name: git-secret
+        secret:
+          defaultMode: 0400
+          secretName: gitlab-secret
+    container:
+      volumeMounts:
+        - mountPath: /work
+          name: work
+        - mountPath: /root/.ssh/
+          name: git-secret
+      image: alpine/git:v2.26.2
+      workingDir: /work
+      args:
+        - clone
+        - --depth
+        - "1"
+        - --branch
+        - "{{inputs.parameters.branch}}"
+        - --single-branch
+        - "{{inputs.parameters.repo}}"
+        - .
+  - name: image
+    inputs:
+      parameters:
+        - name: image
+        - name: dockerfile
+    volumes:
+      - name: docker-config
+        secret:
+          secretName: harbor                        # 这里需要和上面创建的 Secret 名称保持一致
+      - name: cache
+        hostPath:
+          path: /mnt/data
+          type: DirectoryOrCreate
+    container:
+      image: moby/buildkit:v0.9.3-rootless
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: docker-config
+          mountPath: /.docker
+        - name: cache
+          mountPath: /cache
+      workingDir: /work/
+      securityContext:
+        privileged: true
+      env:
+        - name: BUILDKITD_FLAGS
+          value: --oci-worker-no-process-sandbox
+        - name: DOCKER_CONFIG
+          value: /.docker
+      command:
+        - buildctl-daemonless.sh
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=.
+        - --local
+        - dockerfile={{inputs.parameters.dockerfile}}
+        - --output
+        - type=image,name=10.121.218.184:30002/{{inputs.parameters.image}},push=true,registry.insecure=true   # 支持推送的 HTTP 地址
+        - --opt
+        - build-arg:GOPROXY=http://goproxy.goproxy.svc:8081,direct        # 设置内网 Go 缓存代理
+EOF
+```
+
+### 小结
+在上面的例子中，有如下几点需要注意的：
+
+* 采用 buildkit 构建镜像，避免挂载本地 Docker 的 `/var/run/docker.sock` 文件
+* 上面的例子，在 Kubernetes 集群不以 Docker 作为[容器运行](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)时也能正常使用
+* 在实际使用过程中，有遇到过 buildkit 报错的情况，可以考虑增加重试机制进一步保障构建成功
+* `registry.insecure=true` 这个参数对于私有化环境中没有证书的情况非常重要
+* buildkit 还支持缓存持久化，从而加快构建速度，有兴趣的朋友可以翻阅官方文档，或帮助完善这里的例子
+* Go 缓存代理是可选的，但推荐在内网中部署以加快依赖下载速度
+
 ## Webhook
 所有主流 Git 仓库都是支持 webhook 的，借助 webhook 可以当代码发生变化后实时地触发工作流的执行。
 
