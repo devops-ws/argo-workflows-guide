@@ -451,13 +451,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: github.com
-    namespace: argo
+    namespace: default
 ---
 apiVersion: v1
 stringData:
-  github.com: |			# 这里对应 ServiceAcccount 名称
-    type: github		# 固定的几个类型
-    secret: "my-uuid"
+  github.com: |			                  # 这里对应 ServiceAcccount 名称
+    type: github		                  # 固定的几个类型
+    secret: "argo-workflow-secret"    # webhook 中配置的 Secret Token
 kind: Secret
 metadata:
   name: argo-workflows-webhook-clients
@@ -703,8 +703,119 @@ spec:
 | [HTTP](https://argoproj.github.io/argo-workflows/http-template/) | 支持发送 HTTP 请求 |
 | 资源 | 直接操作 Kubernetes 资源 |
 
+## 认证模型
+Argo workflows 支持三种认证模型：
+
+* server
+  * 采用服务端的 ServiceAccount，UI 节目无需登录认证，可作为体验、测试等场景使用
+* client
+  * 客户端需要提供 Token 等认证信息
+  * 从 v3.0+ 开始作为 Argo workflows 的默认认证方式
+* sso
+  * 后端有对应的 ServiceAccount 选择机制，包括有：优先级、表达式等匹配不同的用户、用户组权限
+
+其中，`sso` 和 `client` 可以组合使用，分别为：UI、webhook、SDK Client 等提供认证。
+
 ## SSO
-TODO
+为了保证 Argo workflows 同时支持 [SSO(Single Sign-On) ](https://argoproj.github.io/argo-workflows/argo-server-sso/)以及 webhook 的执行，需要设置认证模式为：
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argo-server
+  namespace: argo
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - server
+        - --auth-mode=sso           # UI 登录后所有操作使用的权限，参考后面的配置
+        - --auth-mode=client        # webhook 触发时采用的权限模式
+        name: argo-server
+```
+
+下面以 [Dex](https://github.com/devops-ws/dex-guide) 为例（需要有：`read_user`、`openid` 的授权），给出配置 SSO 信息：
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+data:
+  sso: |
+    issuer: https://10.121.218.184:31392/api/dex                    # Dex 服务地址
+    clientId:
+      name: argo-workflows-sso
+      key: client-id
+    clientSecret:
+      name: argo-workflows-sso
+      key: client-secret
+    redirectUrl: https://10.121.218.184:30298/oauth2/callback       # 这里 Argo workflows 的地址必须是浏览器可访问的
+    insecureSkipVerify: true
+    scopes:
+    - groups                        # 用组作为权限划分
+    - email
+    rbac:
+      enabled: true                 # 启用 RBAC 权限认证，下面需要提供对应的配置
+```
+
+创建上面所需要的 Secret：
+```shell
+cat <<EOF | kubectl apply -f argo -f
+apiVersion: v1
+data:
+  # 下面的 client-id、client-secret 可以向 oauth 服务提供者拿到
+  client-id: YXJnby13b3JrZmxvd3Mtc3Nv
+  client-secret: cmljaw==
+kind: Secret
+metadata:
+  name: argo-workflows-sso
+type: Opaque
+EOF
+```
+
+为 SSO 登录的用户提供只读权限：
+```shell
+cat <<EOF | kubectl apply -n argo -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-default-login
+  annotations:
+    workflows.argoproj.io/rbac-rule: "'dev' in groups"        # dev 用户组登录后会使用该账号
+    workflows.argoproj.io/rbac-rule-precedence: "10"          # 多条规则匹配的情况下，选择数字大的
+EOF
+
+cat <<EOF | kubectl apply -n argo -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: argo-workflow
+  name: argo-view-default-login-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-aggregate-to-view                          # 内置的只读角色
+subjects:
+- kind: ServiceAccount
+  name: user-default-login
+  namespace: argo
+EOF
+```
+
+### 小结
+可以给 Argo workflows 配置任意兼容 OAuth 2 的提供商，例如：Dex、GitHub、Gitlab 公有云、Gitlab 社区版、Argo CD 等。
+
+内置的角色包括（以下都是 ClusterRole）：
+
+* `argo-aggregate-to-view`
+* `argo-aggregate-to-edit`
+* `argo-aggregate-to-admin`
+* `argo-cluster-role`，没有 `workfloweventbindings` 的权限
+* `argo-server-cluster-role`，包含所有需要的权限
 
 ## 插件机制
 Argo Workflows 内置了[几种类型的任务模板](#任务模板类型)，这些任务类型或是方便解决特定问题，或是可以解决通用问题。此外，我们还可以通过[执行器（Executor）插件](https://argoproj.github.io/argo-workflows/plugins/)扩展 Argo Workflows 的功能。
