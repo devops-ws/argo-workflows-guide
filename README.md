@@ -226,6 +226,20 @@ EOF
 # docker login 10.121.218.184:30002 -uyour-username -pyour-password
 kubectl create secret generic harbor --from-file=config.json=/root/.docker/config.json -n default
 cat <<EOF | kubectl apply -n default -f -
+---
+apiVersion: v1
+data:
+  buildkitd.toml: |
+    debug = false
+    [worker.containerd]
+      namespace = "buildkit"
+    [registry."10.121.218.184:30002"]       # 支持从私有镜像仓库中拉取镜像
+      http = true
+      insecure = true
+kind: ConfigMap
+metadata:
+  name: buildkit
+---
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -310,6 +324,9 @@ spec:
         hostPath:
           path: /mnt/data
           type: DirectoryOrCreate
+      - name: buildkit
+        configMap:
+          name: buildkit
     container:
       image: moby/buildkit:v0.9.3-rootless
       volumeMounts:
@@ -319,12 +336,14 @@ spec:
           mountPath: /.docker
         - name: cache
           mountPath: /cache
+        - mountPath: /etc/buildkit/
+          name: buildkit
       workingDir: /work/
       securityContext:
         privileged: true
       env:
         - name: BUILDKITD_FLAGS
-          value: --oci-worker-no-process-sandbox
+          value: --oci-worker-no-process-sandbox --config=/etc/buildkit/buildkitd.toml # 支持从 HTTP 地址拉取镜像
         - name: DOCKER_CONFIG
           value: /.docker
       command:
