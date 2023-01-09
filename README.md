@@ -219,6 +219,7 @@ EOF
 
 * 在集群中的每个节点上[配置 Docker 支持 HTTP 镜像地址](https://github.com/devops-ws/harbor-guide#docker-daemon)
 * 创建 Git 凭据
+  * `kubectl create secret generic gitlab-secret -n default --dry-run=client -oyaml --from-file=id_rsa=/root/.ssh/id_rsa --from-file=known_hosts=/root/.ssh/known_hosts --from-literal=token=h-zez9CWzyzykbLoS53s`
 * 创建 Docker 凭据（下面已包含）
 
 ```shell
