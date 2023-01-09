@@ -1204,3 +1204,4 @@ func main() {
 * [DevOps Practice Guide](https://github.com/LinuxSuRen/devops-practice-guide)
 * [Argo CD Guide](https://github.com/LinuxSuRen/argo-cd-guide)
 * [Argo Rollouts Guide](https://github.com/LinuxSuRen/argo-rollouts-guide)
+* [更多场景下的模板样例](templates/README.md)
