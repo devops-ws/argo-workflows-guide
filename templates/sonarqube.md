@@ -20,6 +20,7 @@ spec:
         - -Dsonar.projectBaseDir=/work/{{inputs.parameters.basedir}}
         - -Dsonar.projectKey={{inputs.parameters.projectKey}}
         - -Dsonar.go.coverage.reportPaths=coverage.out
+        - -Dsonar.java.binaries=/work/{{inputs.parameters.basedir}}/target/classes/
       env:
         - name: SONAR_HOST_URL
           value: http://10.121.218.184:30008/
