@@ -13,6 +13,8 @@ spec:
       parameters:
         - name: target
           default: "."
+        - name: ignore-filename
+          default: "^(.yaml$)"
         - name: schema1
           default: 'https://ghproxy.com/https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/[[.NormalizedKubernetesVersion]]-standalone[[.StrictSuffix]]/[[.ResourceKind]][[.KindSuffix]].json'
         - name: schema2
@@ -24,7 +26,9 @@ spec:
         - -schema-location
         - "{{inputs.parameters.schema2}}"
         # - -ignore-missing-schemas=true
+        - -ignore-filename-pattern={{inputs.parameters.ignore-filename}}
         - -strict
+        - -cache=/work/
         - -delims=[[,]]
         - -summary
         - -output=json
