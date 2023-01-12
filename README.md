@@ -1047,6 +1047,55 @@ metadata:
 
 需要注意的是，这里的清理机制会将多余的 Workflow 资源从 Kubernetes 中删除。如果希望能更多历史记录的话，建议启用并配置好归档功能。
 
+除了工作流有回收清理机制外，也可以针对 Pod 设置回收机制，参考配置如下：
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: hello-world  # Name of this Workflow
+  namespace: default
+spec:
+  podGC:
+    strategy: OnPodCompletion
+```
+
+清理策略的可选值包括：
+
+* `OnPodCompletion`
+* `OnPodSuccess`
+* `OnWorkflowCompletion`
+* `OnWorkflowSuccess`
+
+建议 PodGC 与日志持久化配合使用，不然可能会由于 Pod 被删除后无法查看工作流日志。
+
+## 工作流默认配置
+在实际场景下，我们往往需要配置不少的工作流模板，而这些模板中也通常会有一些通用的配置项，例如：
+拉取私有镜像的凭据、Pod 回收策略、卷挂载等待。我们可以把这些公共配置加到 ConfigMap 中，请参考如下：
+
+```yaml
+apiVersion: v1
+data:
+  workflowDefaults: |
+    spec:
+      podGC:
+        strategy: OnPodCompletion           # Pod 完成后即删除
+      imagePullSecrets:
+      - name: harbor-pull                   # 公共的私有镜像拉取凭据
+      volumeClaimTemplates:                 # 默认的代码拉取卷位置
+        - metadata:
+            name: work
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 64Mi
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+```
+
 ## Golang SDK
 Argo Workflows 官方[维护了 Golang、Java、Python 语言](https://argoproj.github.io/argo-workflows/client-libraries/)的 SDK。下面以 Golang 为例，讲解 SDK 的使用方法。
 
