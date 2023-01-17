@@ -225,6 +225,7 @@ EOF
 ```shell
 # 执行下面的命令登录 Harbor
 # docker login 10.121.218.184:30002 -uyour-username -pyour-password
+# https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md
 kubectl create secret generic harbor --from-file=config.json=/root/.docker/config.json -n default
 cat <<EOF | kubectl apply -n default -f -
 ---
