@@ -52,6 +52,8 @@ docker run -it --rm -v $HOME/.kube/:/root/.kube --network host --pull always ghc
 
 ```shell
 kubectl -n argo port-forward deploy/argo-server --address 0.0.0.0 2746:2746
+# 或者设置为 NodePort
+kubectl -n argo patch svc argo-server --type='json' -p '[{"op":"replace", "path":"/spec/type", "value":"NodePort"}, {"op":"add", "path":"/spec/ports/0/nodePort","value":31517}]'
 ```
 
 > 需要注意的是，这里默认的配置下，服务器设置了自签名的证书提供 HTTPS 服务，因此，确保你使用 `https://` 协议进行访问。
