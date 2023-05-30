@@ -161,7 +161,7 @@ spec:
                 value: "{{workflow.parameters.branch}}"
         - name: build
           template: build
-          depends: checkout # 通过 depends 设置执行任务之间的顺序关系
+          depends: clone # 通过 depends 设置执行任务之间的顺序关系
   
   - name: clone
     inputs:
