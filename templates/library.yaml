@@ -1,0 +1,428 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: library
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: work
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 64Mi
+
+  templates:
+  - name: clone
+    inputs:
+      parameters:
+        - name: repo
+        - name: branch
+        - name: pr
+    volumes:
+      - name: git-secret
+        secret:
+          defaultMode: 0400
+          secretName: gitlab-secret
+    container:
+      volumeMounts:
+        - mountPath: /work
+          name: work
+        - mountPath: /root/.ssh/
+          name: git-secret
+      image: 10.121.218.184:30002/ghcr.io/linuxsuren/gogit:v0.0.7
+      workingDir: /work
+      args:
+        - checkout
+        - --url
+        - "{{inputs.parameters.repo}}"
+        - --branch
+        - "{{=sprig.trimPrefix('refs/heads/', inputs.parameters['branch'])}}"
+        - --pr
+        - "{{inputs.parameters.pr}}"
+        - --version-output
+        - /work/version
+        - --version-trim-prefix
+        - release-
+    outputs:
+      parameters:
+      - name: version
+        valueFrom:
+          path: /work/version
+    activeDeadlineSeconds: 1800
+
+  - name: code-check
+    container:
+      image: 10.121.218.184:30002/cache/library/golang:1.20
+      volumeMounts:
+        - name: work
+          mountPath: /work
+      workingDir: /work
+      env:
+        - name: GOPROXY
+          value: https://goproxy.cn,direct
+          #value: http://goproxy.goproxy.svc:8081,direct
+        - name: GOSUMDB
+          value: gosum.io+ce6e7565+AY5qEHUk/qmHc5btzW45JVoENfazw8LielDsaI+lEbq6
+      command:
+        - make
+      args:
+        - generate
+        - manifests
+        - vet
+        - fmt
+    activeDeadlineSeconds: 1800
+
+  - name: git-diff
+    container:
+      volumeMounts:
+        - mountPath: /work
+          name: work
+      image: alpine/git:v2.26.2
+      workingDir: /work
+      args:
+        - diff
+        - --exit-code
+
+  - name: go-test
+    container:
+      image: 10.121.218.184:30002/cache/library/golang:1.20
+      volumeMounts:
+        - name: work
+          mountPath: /work
+      workingDir: /work
+      env:
+        - name: GOPROXY
+          value: https://goproxy.cn,direct
+          # value: http://goproxy.goproxy.svc:8081,direct
+        - name: GOSUMDB
+          value: gosum.io+ce6e7565+AY5qEHUk/qmHc5btzW45JVoENfazw8LielDsaI+lEbq6
+      command:
+      - go
+      - test
+      - ./...
+      - -coverprofile=coverage.out
+    activeDeadlineSeconds: 1800
+
+  - name: maven
+    inputs:
+      parameters:
+        - name: target
+          default: "package"
+        - name: basedir
+          default: "."
+    container:
+      image: 10.121.218.184:30002/cache/library/maven:3.8.7-openjdk-18
+      args:
+        - mvn
+        - "{{inputs.parameters.target}}"
+        - -f
+        - "{{inputs.parameters.basedir}}/pom.xml"
+      workingDir: /work
+      volumeMounts:
+        - name: work
+          mountPath: /work
+
+  - name: scan
+    inputs:
+      parameters:
+        - name: projectKey
+        - name: basedir
+          default: "."
+    container:
+      image: 10.121.218.184:30002/cache/sonarsource/sonar-scanner-cli:4.8.0
+      args:
+        - -Dsonar.projectBaseDir=/work/{{inputs.parameters.basedir}}
+        - -Dsonar.projectKey={{inputs.parameters.projectKey}}
+        - -Dsonar.go.coverage.reportPaths=coverage.out
+        - -Dsonar.java.binaries=/work/{{inputs.parameters.basedir}}/target/classes/
+      env:
+        - name: SONAR_HOST_URL
+          value: http://10.121.218.184:30008/
+        - name: SONAR_TOKEN
+          value: sqa_15cdc7a6ef5dabdae005baadd2d15f8689b3932e
+      volumeMounts:
+        - name: work
+          mountPath: /work
+
+  - name: npm
+    inputs:
+      parameters:
+        - name: command
+          default: "install"
+    container:
+      image: 10.121.218.184:30002/cache/library/node:19-alpine3.16
+      args:
+        - npm
+        - "{{inputs.parameters.command}}"
+        - --registry=https://registry.npmmirror.com
+      workingDir: /work
+      volumeMounts:
+        - name: work
+          mountPath: /work
+
+  - name: npm-run
+    inputs:
+      parameters:
+        - name: command
+          default: "build"
+    container:
+      image: 10.121.218.184:30002/cache/library/node:19-alpine3.16
+      args:
+        - npm
+        - run
+        - "{{inputs.parameters.command}}"
+      workingDir: /work
+      volumeMounts:
+        - name: work
+          mountPath: /work
+
+  - name: report-in-comment
+    inputs:
+      parameters:
+        - name: message
+        - name: identity
+          default: "Message report."
+    volumes:
+      - name: git-secret
+        secret:
+          defaultMode: 0400
+          secretName: gitlab-secret
+    container:
+      volumeMounts:
+        - mountPath: /work
+          name: work
+        - mountPath: /root/.ssh/
+          name: git-secret
+      image: 10.121.218.184:30002/ghcr.io/linuxsuren/gogit:v0.0.5
+      workingDir: /work
+      args:
+        - comment
+        - --provider=gitlab
+        - --server=http://10.121.218.82:6080/
+        - --token=h-zez9CWzyzykbLoS53s
+        - --username=zhaoxiaojie
+        - --owner={{workflow.parameters.owner}}
+        - --repo={{workflow.parameters.repo}}
+        - --pr={{workflow.parameters.pr}}
+        - -m="{{inputs.parameters.message}}"
+        - --identity={{inputs.parameters.identity}}
+    activeDeadlineSeconds: 1800
+
+  - name: image
+    inputs:
+      parameters:
+        - name: image
+        - name: dockerfile
+        - name: tag
+          default: master
+    outputs:
+      parameters:
+        - name: image
+          value: 10.121.218.184:30002/{{inputs.parameters.image}}
+    volumes:
+      - name: docker-config
+        secret:
+          secretName: harbor
+      - name: cache
+        hostPath:
+          path: /mnt/data
+          type: DirectoryOrCreate
+      - name: buildkit
+        configMap:
+          name: buildkit
+    retryStrategy:
+      limit: "6"
+      retryPolicy: OnFailure
+    container:
+      image: 10.121.218.184:30002/cache/moby/buildkit:v0.11.6-rootless
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: docker-config
+          mountPath: /.docker
+        - name: cache
+          mountPath: /cache
+        - mountPath: /etc/buildkit/
+          name: buildkit
+      workingDir: /work/
+      securityContext:
+        privileged: true
+        seccompProfile:
+          type: Unconfined
+      env:
+        - name: BUILDKITD_FLAGS
+          value: --oci-worker-no-process-sandbox --config=/etc/buildkit/buildkitd.toml
+        - name: DOCKER_CONFIG
+          value: /.docker
+      command:
+        - buildctl-daemonless.sh
+      args:
+        - build
+        - --frontend
+        - dockerfile.v0
+        - --local
+        - context=.
+        - --local
+        - dockerfile={{inputs.parameters.dockerfile}}
+        - --output
+        - type=image,name=10.121.218.184:30002/{{inputs.parameters.image}},push=true,registry.insecure=true
+        - --opt
+        - build-arg:GOPROXY=https://goproxy.cn,direct
+        - --opt
+        - build-arg:TAG={{inputs.parameters.tag}}
+        # - build-arg:GOPROXY=http://goproxy.goproxy.svc:8081,direct
+        # - --export-cache
+        # - type=registry,ref=10.121.218.184:30002/al-cloud/test:buildcache
+        # - --import-cache
+        # - type=registry,ref=10.121.218.184:30002/al-cloud/test:buildcache
+
+  - name: kaniko
+    inputs:
+      parameters:
+        - name: image
+        - name: dockerfile
+        - name: tag
+          default: master
+    outputs:
+      parameters:
+        - name: image
+          value: 10.121.218.184:30002/{{inputs.parameters.image}}
+    volumes:
+      - name: docker-config
+        secret:
+          secretName: harbor
+      - name: cache
+        hostPath:
+          path: /mnt/data
+          type: DirectoryOrCreate
+      - name: buildkit
+        configMap:
+          name: buildkit
+    retryStrategy:
+      limit: "6"
+      retryPolicy: OnFailure
+    container:
+      image: 10.121.218.184:30002/gcr.io/kaniko-project/executor:latest
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: docker-config
+          mountPath: /.docker
+        - name: cache
+          mountPath: /cache
+      workingDir: /work/
+      env:
+        - name: DOCKER_CONFIG
+          value: /.docker
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile={{inputs.parameters.dockerfile}}
+        - --context=dir://.
+        - --destination=10.121.218.184:30002/{{inputs.parameters.image}}
+
+  - name: status
+    inputs:
+      parameters:
+        - name: commentIdentity
+          default: "AILink workflow status report."
+    plugin:
+      gogit-executor-plugin:
+        owner: "{{workflow.parameters.owner}}"
+        repo: "{{workflow.parameters.repo}}"
+        pr: "{{workflow.parameters.pr}}"
+        status: "{{workflow.status}}"
+        commentIdentity: "{{inputs.parameters.commentIdentity}}"
+
+  - name: api-test-status
+    plugin:
+      api-test-executor-plugin:
+        owner: "{{workflow.parameters.owner}}"
+        repo: "{{workflow.parameters.repo}}"
+        pr: "{{workflow.parameters.pr}}"
+        status: "{{workflow.status}}"
+
+  - name: dingding
+    inputs:
+      parameters:
+        - name: url
+          default: "https://oapi.dingtalk.com/robot/send?access_token=95fe489e3eaf64969c7f38c6bcf51f07f1dc38f2d460b550d8afef1cf6aec73b"
+        - name: message
+    http:
+      timeoutSeconds: 20 # Default 30
+      url: "{{inputs.parameters.url}}"
+      method: "POST"
+      headers:
+        - name: "Content-Type"
+          value: "application/json"
+      successCondition: "response.statusCode == 200"
+      body: |
+        {"msgtype": "text","text": {"content":"workflow status: {{inputs.parameters.message}}"}}
+
+  - name: atomic
+    plugin:
+      argo-atomic-plugin: {}
+
+  - name: kustomize
+    inputs:
+      parameters:
+        - name: image
+          default: ":a"
+        - name: extra-image
+          default: ":b"
+    dag:
+      tasks:
+        - name: kustomize-set
+          template: kustomize-set
+          arguments:
+            parameters:
+              - name: image
+                value: "{{inputs.parameters.image}}"
+              - name: extra-image
+                value: "{{inputs.parameters.extra-image}}"
+        # - name: kustomize-build
+        #   depends: kustomize-set
+        #   template: kustomize-build
+
+  - name: kustomize-set
+    inputs:
+      parameters:
+        - name: image
+          default: ":a"
+        - name: extra-image
+          default: ":b"
+    container:
+      image: 10.121.218.184:30002/cache/traherom/kustomize-docker:2.0.0
+      args:
+        - kustomize
+        - edit
+        - set
+        - image
+        - "{{inputs.parameters.image}}"
+        - "{{inputs.parameters.extra-image}}"
+      workingDir: /work/config/default
+      volumeMounts:
+        - name: work
+          mountPath: /work
+
+  - name: kustomize-build
+    inputs:
+      parameters:
+        - name: path
+          default: "config/default"
+    outputs:
+      artifacts:
+      - name: install
+        path: /work/test.yaml
+    container:
+      image: 10.121.218.184:30002/cache/traherom/kustomize-docker:2.0.0
+      args:
+        - kustomize
+        - build
+        - "{{inputs.parameters.path}}"
+        - -o=test.yaml
+      workingDir: /work
+      volumeMounts:
+        - name: work
+          mountPath: /work
