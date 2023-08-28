@@ -369,6 +369,11 @@ spec:
 EOF
 ```
 
+需要在每个构建节点上执行如下的命令：
+```shell
+echo 15000 > /proc/sys/user/max_user_namespaces
+```
+
 ### 小结
 在上面的例子中，有如下几点需要注意的：
 
