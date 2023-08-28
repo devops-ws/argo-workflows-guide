@@ -322,6 +322,10 @@ spec:
       parameters:
         - name: image
         - name: dockerfile
+hostAliases:					# 关联 IP 和主机名
+      - ip: "192.168.21.110"
+        hostnames:
+        - "your.com"
     volumes:
       - name: docker-config
         secret:
