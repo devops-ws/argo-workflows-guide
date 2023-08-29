@@ -420,7 +420,7 @@ spec:
       - name: install
         path: /work/test.yaml
     container:
-      image: 10.121.218.184:30002/cache/traherom/kustomize-docker:2.0.0
+      image: traherom/kustomize-docker:2.0.0
       args:
         - kustomize
         - build
@@ -430,3 +430,28 @@ spec:
       volumeMounts:
         - name: work
           mountPath: /work
+
+  - name: mc
+    inputs:
+      parameters:
+        - name: source
+          default: "config/default"
+        - name: target
+          default: "./"
+    volumes:
+      - name: config
+        secret:
+          secretName: mc
+    container:
+      image: minio/mc:RELEASE.2023-08-18T21-57-55Z
+      args:
+        - mc
+        - cp
+        - "{{inputs.parameters.source}}"
+        - "{{inputs.parameters.target}}"
+      workingDir: /work
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: config
+          mountPath: /root/.mc
