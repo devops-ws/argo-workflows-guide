@@ -441,17 +441,56 @@ spec:
     volumes:
       - name: config
         secret:
+          defaultMode: 0400
           secretName: mc
+      - name: session
+        emptyDir: {}
+    initContainers:
+      - image: alpine
+        name: mk-mc
+        args:
+          - mkdir
+          - -p
+          - /root/.mc
+        workingDir: /work
+        securityContext:
+          privileged: true
+          seccompProfile:
+            type: Unconfined
+        volumeMounts:
+          - name: session
+            mountPath: /root
+      - image: alpine
+        name: setup-env
+        args:
+          - cp
+          - /work/config.json
+          - /root/.mc/config.json
+        workingDir: /work
+        securityContext:
+          privileged: true
+          seccompProfile:
+            type: Unconfined
+        volumeMounts:
+          - name: session
+            mountPath: /root
+          - name: config
+            mountPath: /work
     container:
       image: minio/mc:RELEASE.2023-08-18T21-57-55Z
       args:
-        - mc
         - cp
         - "{{inputs.parameters.source}}"
         - "{{inputs.parameters.target}}"
+        - --continue=false
+        - --config-dir=/work
       workingDir: /work
+      securityContext:
+        privileged: true
+        seccompProfile:
+          type: Unconfined
       volumeMounts:
         - name: work
           mountPath: /work
-        - name: config
-          mountPath: /root/.mc
+        - name: session
+          mountPath: /root
