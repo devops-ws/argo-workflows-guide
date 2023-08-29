@@ -378,6 +378,8 @@ EOF
 echo 15000 > /proc/sys/user/max_user_namespaces
 ```
 
+除了 `buildkit` 以外，也可以考虑使用 `kaniko`（你可以从 [library.yaml](templates/library.yaml)中找到对应的配置）。
+
 ### 小结
 在上面的例子中，有如下几点需要注意的：
 

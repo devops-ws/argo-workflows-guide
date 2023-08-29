@@ -321,6 +321,10 @@ spec:
         - --dockerfile={{inputs.parameters.dockerfile}}
         - --context=dir://.
         - --destination=10.121.218.184:30002/{{inputs.parameters.image}}
+        - --skip-tls-verify
+        - --skip-tls-verify-pull
+        - --build-arg
+        - VERSION=v1.0.0
 
   - name: status
     inputs:
