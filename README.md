@@ -1085,6 +1085,26 @@ spec:
 
 建议 PodGC 与日志持久化配合使用，不然可能会由于 Pod 被删除后无法查看工作流日志。
 
+## 可观测
+Argo Workflows 支持通过 Prometheus 采集监控指标，包括：[预定义、自定义](https://argoproj.github.io/argo-workflows/metrics/)的指标，下面是添加自定义指标的示例：
+
+```yaml
+spec:
+  metrics:
+    prometheus:
+      - name: exec_duration_gauge
+        labels:
+          - key: name
+            value: '{{workflow.name}}' # 工作流名称
+          - key: templatename
+            value: '{{workflow.labels.workflows.argoproj.io/workflow-template}}' # 工作流模板名称
+          - key: namespace
+            value: '{{workflow.namespace}}' # 工作流所在命名空间
+        help: Duration gauge by name
+        gauge:
+          value: '{{workflow.duration}}' # 工作流执行时长
+```
+
 ## 工作流默认配置
 在实际场景下，我们往往需要配置不少的工作流模板，而这些模板中也通常会有一些通用的配置项，例如：
 拉取私有镜像的凭据、Pod 回收策略、卷挂载等待。我们可以把这些公共配置加到 ConfigMap 中，请参考如下：
