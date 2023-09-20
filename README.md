@@ -1103,7 +1103,44 @@ spec:
         help: Duration gauge by name
         gauge:
           value: '{{workflow.duration}}' # 工作流执行时长
+      - counter:
+          value: "1"
+        help: Duration gauge by name
+        labels:
+        - key: name
+          value: '{{workflow.name}}'
+        - key: namespace
+          value: '{{workflow.namespace}}'
+        - key: templatename
+          value: '{{workflow.labels.workflows.argoproj.io/workflow-template}}'
+        name: failed_count
+        when: '{{workflow.status}} == Failed'
+      - counter:
+          value: "1"
+        help: Duration gauge by name
+        labels:
+        - key: name
+          value: '{{workflow.name}}'
+        - key: namespace
+          value: '{{workflow.namespace}}'
+        - key: templatename
+          value: '{{workflow.labels.workflows.argoproj.io/workflow-template}}'
+        name: successed_count
+        when: '{{workflow.status}} == Succeeded'
+      - counter:
+          value: "1"
+        help: Duration gauge by name
+        labels:
+        - key: name
+          value: '{{workflow.name}}'
+        - key: namespace
+          value: '{{workflow.namespace}}'
+        - key: templatename
+          value: '{{workflow.labels.workflows.argoproj.io/workflow-template}}'
+        name: total_count
 ```
+
+上面包含了工作流的成功、失败、总量的数据指标。
 
 ## 工作流默认配置
 在实际场景下，我们往往需要配置不少的工作流模板，而这些模板中也通常会有一些通用的配置项，例如：
