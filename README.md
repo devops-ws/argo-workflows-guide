@@ -1105,7 +1105,7 @@ spec:
           value: '{{workflow.duration}}' # 工作流执行时长
       - counter:
           value: "1"
-        help: Duration gauge by name
+        help: "Total count of all the failed workflows"
         labels:
         - key: name
           value: '{{workflow.name}}'
@@ -1117,7 +1117,7 @@ spec:
         when: '{{workflow.status}} == Failed'
       - counter:
           value: "1"
-        help: Duration gauge by name
+        help: "Total count of all the successed workflows"
         labels:
         - key: name
           value: '{{workflow.name}}'
@@ -1129,7 +1129,7 @@ spec:
         when: '{{workflow.status}} == Succeeded'
       - counter:
           value: "1"
-        help: Duration gauge by name
+        help: "Total count of all the workflows"
         labels:
         - key: name
           value: '{{workflow.name}}'
