@@ -15,6 +15,10 @@
 | WorkflowTemplate | Pipeline |
 | Workflow | Build |
 
+## 最佳实践
+* 把所有 Workflow YAML 文件存到一个 Git 仓库（例如：`infra/workflows`）中，并利用 [Argo CD](https://github.com/devops-ws/argo-cd-guide) 同步到 Kubernetes 集群
+* 团队之间共用的部分封装为 `ClusterWorkflowTemplate`
+
 ## 安装
 首先，你需要有一套 [Kubernetes](https://github.com/kubernetes/kubernetes/) 环境。下面的工具可以帮助你快速按照好一套 Kubernetes 环境：
 
