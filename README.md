@@ -394,6 +394,58 @@ echo 15000 > /proc/sys/user/max_user_namespaces
 * buildkit 还支持缓存持久化，从而加快构建速度，有兴趣的朋友可以翻阅官方文档，或帮助完善这里的例子
 * Go 缓存代理是可选的，但推荐在内网中部署以加快依赖下载速度
 
+## 循环任务
+Argo Workflow 的 [Loop](https://argoproj.github.io/argo-workflows/walk-through/loops/) 功能，可以简化重复的任务，方便维护。以下是一个例子：
+
+```shell
+cat <<EOF | kubectl apply -n default -f -
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: output
+spec:
+  entrypoint: main
+
+  templates:
+  - name: main
+    dag:
+      tasks:
+        - name: build-image
+          template: build-image
+          depends: clone
+          arguments:
+            parameters:
+              - name: version
+                value: "{{tasks.clone.outputs.parameters.version}}"
+  - name: build-image
+    inputs:
+      parameters:
+        - name: version
+          default: ""
+    steps:
+    - - name: image
+        templateRef:
+          name: library
+          template: image
+          clusterScope: true
+        arguments:
+          parameters:
+            - name: image
+              value: al-cloud/{{item.name}}:{{inputs.parameters.version}}
+            - name: dockerfile
+              value: build/{{item.context}}
+            - name: tag
+              value: "{{inputs.parameters.version}}"
+        withItems: # 设置循环的参数
+        - { name: 'apiserver', context: 'al-cloud' }
+        - { name: 'controller', context: 'component-manager' }
+        - { name: 'app-template', context: 'app-template' }
+        - { name: 'manifest', context: 'manifest' }
+        - { name: 'agent', context: 'agent' }
+        - { name: 'api-test', context: 'api-test' }
+EOF
+```
+
 ## 结果输出与引用
 Argo Workflows 支持制品（artifact）与变量的输出，下面是变量输出以及引用的例子：
 
