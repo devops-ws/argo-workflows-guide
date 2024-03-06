@@ -596,6 +596,177 @@ https://argo-workflow-ip:port/api/v1/events/default/
 * webhook 绑定并不局限在 Git 代码仓库上，还可以与其他类型的 webhook 做关联
 * 通过从 webhook 的 payload 中提取值，可以非常方便地为工作流模板参数传递值
 
+## Argo Event
+
+[Argo Event](https://github.com/argoproj/argo-events) 是另外一种使得代码更新后自动触发流水线的方式。你需要单独[安装](https://argoproj.github.io/argo-events/quick_start/)。
+
+![](https://argoproj.github.io/argo-events/assets/argo-events-architecture.png)
+
+* EventSource 接受消息（来自 webhook 或其他）
+  * 每个 EventSource 资源对应一个无状态服务（Deployment）
+* EventBus 为消息总线
+  * 为一个有状态服务（Statefulsets）
+* Sensor 用于获取消息并触发动作（流水线）
+  * 每个 Sensor 资源对应一个无状态服务（Deployment）
+
+以下是默认的消息总线，无需做如何配置，创建后会自动创建一个有状态服务：
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: EventBus
+metadata:
+  name: default
+  namespace: default
+spec:
+  nats:
+    native:
+      # Optional, defaults to 3. If it is < 3, set it to 3, that is the minimal requirement.
+      replicas: 3
+      # Optional, authen strategy, "none" or "token", defaults to "none"
+      auth: none
+```
+
+下面的资源会自动创建 `EventSource` 的 `Deployment` 和 `Service`（可以手动修改服务为 `NodePort`）：
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: default
+  namespace: default
+spec:
+  service:
+    ports:
+      - port: 12000
+        targetPort: 12000
+  gitlab:
+    pr:
+      # Project namespace paths or IDs
+      projects:
+        - "cmp/al-cloud"
+      webhook:
+        endpoint: /push # 固定值
+        port: "12000" # 固定值
+        method: POST
+        url: http://172.11.0.6:32168 # Sensor 的访问地址
+      accessToken:
+        key: gitlab-token
+        name: gitlab-secret
+      events:
+        - PushEvents
+        - MergeRequestsEvents
+        - TagPushEvents
+        - NoteEvents
+      secretToken:
+        key: webhook-secret
+        name: gitlab-secret
+      enableSSLVerification: false
+      gitlabBaseURL: http://10.121.218.82:6080
+      deleteHookOnFinish: true
+```
+
+下面的资源会自动创建 `Sensor` 的 `Deployment`：
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: default
+  namespace: default
+spec:
+  dependencies:
+    - name: pr
+      eventSourceName: default
+      eventName: pr
+      filters:
+        data:
+          - path: body.object_attributes.state
+            type: string
+            value:
+              - opened
+  triggers:
+    - template:
+        name: argo-workflow-trigger
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: default-
+              spec:
+                arguments:
+                  parameters:
+                    - name: branch
+                    - name: pr
+                workflowTemplateRef:
+                  name: default
+          parameters:
+            - src:
+                dependencyName: pr
+                dataKey: body.object_attributes.source_branch
+              dest: spec.arguments.parameters.0.value
+            - src:
+                dependencyName: pr
+                dataKey: body.object_attributes.iid
+              dest: spec.arguments.parameters.1.value
+```
+
+下面是 Gitlab 创建 `release` 分支或推送到 `master` 分支时的写法：
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: al-cloud-release
+  namespace: default
+spec:
+  dependencies:
+    - name: push
+      eventSourceName: default
+      eventName: al-cloud-push
+      filters:
+        exprLogicalOperator: "or"
+        data:
+          - path: body.object_kind
+            type: string
+            value:
+              - push
+          - path: body.before
+            type: string
+            value:
+              - "0000000000000000000000000000000000000000"
+        exprs:
+          - expr: ref =~ "refs/heads/release-"
+            fields:
+              - name: ref
+                path: body.ref
+          - expr: ref == "refs/heads/master"
+            fields:
+              - name: ref
+                path: body.ref
+
+  triggers:
+    - template:
+        name: trigger
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: al-cloud-push-
+              spec:
+                arguments:
+                  parameters:
+                    - name: branch
+                workflowTemplateRef:
+                  name: pr-al-cloud
+          parameters:
+            - src:
+                dependencyName: push
+                dataKey: body.ref
+              dest: spec.arguments.parameters.0.value
+```
+
 ## 关联代码仓库
 
 对于不少的团队而言，会出于各种考虑而选择私有部署 Git 服务，例如：Gitlab、Gitee 等。而将工作流的执行结果与代码仓库的 Pull Request 相关联几乎是一个**标配**。以下是关联后的几点好处：
