@@ -284,10 +284,18 @@ spec:
         - name: dockerfile
         - name: tag
           default: master
+        - name: server
+          default: '172.11.0.9:30002'
+        - name: dpkVersion
+          default: DPDK_VERSION
+        - name: repo
+          default: ''
+        - name: buildArgRegistry
+          default: ''
     outputs:
       parameters:
         - name: image
-          value: 10.121.218.184:30002/{{inputs.parameters.image}}
+          value: "{{inputs.parameters.server}}/{{inputs.parameters.image}}"
     volumes:
       - name: docker-config
         secret:
@@ -302,8 +310,11 @@ spec:
     retryStrategy:
       limit: "6"
       retryPolicy: OnFailure
+    activeDeadlineSeconds: 2400
     container:
-      image: 10.121.218.184:30002/gcr.io/kaniko-project/executor:latest
+      # oringal image is gcr.io/kaniko-project/executor:latest
+      image: docker.io/surenpi/kaniko-project-executor:latest
+      imagePullPolicy: IfNotPresent
       volumeMounts:
         - name: work
           mountPath: /work
@@ -320,11 +331,26 @@ spec:
       args:
         - --dockerfile={{inputs.parameters.dockerfile}}
         - --context=dir://.
-        - --destination=10.121.218.184:30002/{{inputs.parameters.image}}
+        - --destination={{inputs.parameters.server}}/{{inputs.parameters.image}}
+        - --cache-repo={{inputs.parameters.server}}/library/cache
+        - --insecure
+        - --insecure-pull
+        - --insecure-registry={{inputs.parameters.server}}
         - --skip-tls-verify
         - --skip-tls-verify-pull
+        - --skip-tls-verify-registry={{inputs.parameters.server}}
+        - --registry-map=index.docker.io=172.11.0.9:30546
+        - --registry-map=ghcr.io=172.11.0.9:30846
+        - --skip-push-permission-check
+        - --cache=true
         - --build-arg
-        - VERSION=v1.0.0
+        - DPDK_VERSION={{inputs.parameters.dpkVersion}}
+        - --build-arg
+        - REPO={{inputs.parameters.repo}}
+        - --build-arg
+        - GOPROXY=https://goproxy.cn,direct
+        - --build-arg
+        - REGISTRY={{inputs.parameters.buildArgRegistry}}
 
   - name: status
     inputs:
